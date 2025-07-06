@@ -1,8 +1,8 @@
 name: changed-test-videos
 on:
   pull_request:
-    paths:
-      - 'tests/**'
+    # Run on all PRs to ensure we catch new test files
+    types: [opened, synchronize, reopened]
 
 jobs:
   record:
@@ -22,7 +22,17 @@ jobs:
         id: changed
         run: |
           git fetch origin ${{ github.event.pull_request.base.ref }}
-          CHANGED=$(git diff --name-only FETCH_HEAD ${{ github.sha }} -- 'tests/**/*.py')
+          echo "Comparing base branch: ${{ github.event.pull_request.base.ref }} with current commit: ${{ github.sha }}"
+          # First check if there are any new test files
+          NEW_FILES=$(git ls-files --others --exclude-standard | grep -E 'tests/.*\.py$' || true)
+          # Then check for modified existing test files
+          MODIFIED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} -- 'tests/**/*.py' || true)
+          # Combine both lists
+          CHANGED="$NEW_FILES"$'\n'"$MODIFIED_FILES"
+          # Remove empty lines
+          CHANGED=$(echo "$CHANGED" | grep -v '^$' || true)
+          echo "Changed test files:"
+          echo "$CHANGED"
           echo "files<<EOF" >> "$GITHUB_OUTPUT"
           echo "$CHANGED" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
@@ -33,7 +43,10 @@ jobs:
         run: |
           mkdir -p test-videos
           echo "Running tests: ${{ steps.changed.outputs.files }}"
-          python -m pytest -q ${{ steps.changed.outputs.files }} --video=on --output=test-videos
+          # Convert multiline output to space-separated list
+          TEST_FILES=$(echo "${{ steps.changed.outputs.files }}" | tr '\n' ' ')
+          echo "Test files to run: $TEST_FILES"
+          python -m pytest -v $TEST_FILES --video=on --output=test-videos
       - name: Upload videos
         if: steps.changed.outputs.files != ''
         uses: actions/upload-artifact@v4
