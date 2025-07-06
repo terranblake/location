@@ -2,14 +2,14 @@ import os
 import subprocess
 import time
 import urllib.request
-from datetime import datetime, timedelta
+from datetime import datetime, timedelta, UTC
 
 import pytest
 from playwright.sync_api import sync_playwright
 
 
 def write_logs(log_dir: str):
-    now = datetime.utcnow()
+    now = datetime.now(UTC)
     first = now - timedelta(minutes=30)
     second = now - timedelta(hours=1)
     (log_dir / "terran_phone.log").write_text(
@@ -45,7 +45,7 @@ def server_with_logs(tmp_path):
 
 
 def _format_time(ts: datetime) -> str:
-    diff = datetime.utcnow() - ts
+    diff = datetime.now(UTC) - ts
     mins = int(diff.total_seconds() // 60)
     hours = mins // 60
     if mins < 60:
