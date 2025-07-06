@@ -23,13 +23,16 @@ jobs:
         run: |
           git fetch origin ${{ github.event.pull_request.base.ref }}
           CHANGED=$(git diff --name-only FETCH_HEAD ${{ github.sha }} -- 'tests/**/*.py')
-          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "files<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$CHANGED" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Run changed tests
         if: steps.changed.outputs.files != ''
         env:
           PLAYWRIGHT_VIDEO_MODE: on
         run: |
           mkdir -p test-videos
+          echo "Running tests: ${{ steps.changed.outputs.files }}"
           python -m pytest -q ${{ steps.changed.outputs.files }} --video=on --output=test-videos
       - name: Upload videos
         if: steps.changed.outputs.files != ''

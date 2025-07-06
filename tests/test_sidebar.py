@@ -56,18 +56,29 @@ def _format_time(ts: datetime) -> str:
 def test_people_sidebar(server_with_logs):
     url, first_ts = server_with_logs
     with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        page.goto(f"{url}/")
-        page.wait_for_function("() => window.findHub !== undefined", timeout=10000)
-        page.click("#people-tab")
-        page.wait_for_selector(".person-item")
-        persons = page.query_selector_all(".person-item")
-        assert len(persons) == 1
-        rows = []
-        for item in persons:
-            name = item.query_selector(".person-name").inner_text()
-            status = item.query_selector(".person-status").inner_text()
-            rows.append((name, status))
-        assert rows == [("terran", _format_time(first_ts))]
-        browser.close()
+        browser = p.chromium.launch(
+            # Ensure headless mode for CI environment
+            headless=True
+        )
+        context = browser.new_context(
+            # Enable video recording if configured
+            record_video_dir="test-videos" if os.getenv("PLAYWRIGHT_VIDEO_MODE") == "on" else None
+        )
+        page = context.new_page()
+        try:
+            page.goto(f"{url}/")
+            page.wait_for_function("() => window.findHub !== undefined", timeout=10000)
+            page.click("#people-tab")
+            page.wait_for_selector(".person-item")
+            persons = page.query_selector_all(".person-item")
+            assert len(persons) == 1
+            rows = []
+            for item in persons:
+                name = item.query_selector(".person-name").inner_text()
+                status = item.query_selector(".person-status").inner_text()
+                rows.append((name, status))
+            assert rows == [("terran", _format_time(first_ts))]
+        finally:
+            # Ensure context is closed to finalize video
+            context.close()
+            browser.close()
