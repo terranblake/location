@@ -9,8 +9,11 @@ class FindHub {
         this.currentView = 'devices'; // Track current view
         this.currentDevice = null; // Track current device in detail view
         this.allDeviceLocations = {}; // Store all device location data
-        this.colorPalette = [
-            '#e74c3c', '#3498db', '#2ecc71', '#f39c12', 
+        this.personDevices = {}; // Map person -> device IDs
+        this.deviceOwners = {}; // Map device ID -> person
+        this.currentPerson = null; // Currently selected person
+        this.colorPalette = window.DEVICE_COLORS || [
+            '#e74c3c', '#3498db', '#2ecc71', '#f39c12',
             '#9b59b6', '#1abc9c', '#e67e22', '#34495e'
         ];
         this.colorIndex = 0;
@@ -98,30 +101,51 @@ class FindHub {
     processLocations(data) {
         // Clear existing markers and polylines
         this.clearMap();
-        
-        // Group locations by device
+
+        // Group locations by device and by person
         const deviceLocations = {};
+        this.personDevices = {};
+        this.deviceOwners = {};
+
         data.forEach(loc => {
-            if (!deviceLocations[loc.device_id]) {
-                deviceLocations[loc.device_id] = [];
+            const deviceId = loc.device_id;
+            if (!deviceLocations[deviceId]) {
+                deviceLocations[deviceId] = [];
             }
-            deviceLocations[loc.device_id].push(loc);
+            deviceLocations[deviceId].push(loc);
+
+            const owner = deviceId.includes('_') ? deviceId.split('_')[0] : 'Unknown';
+            this.deviceOwners[deviceId] = owner;
+            if (!this.personDevices[owner]) this.personDevices[owner] = new Set();
+            this.personDevices[owner].add(deviceId);
         });
-        
-        // Store for use in detail views
+
+        Object.keys(this.personDevices).forEach(person => {
+            this.personDevices[person] = Array.from(this.personDevices[person]);
+        });
+
+        // Store all locations for later views
         this.allDeviceLocations = deviceLocations;
         
         // Sort locations by timestamp for each device
         Object.keys(deviceLocations).forEach(deviceId => {
             deviceLocations[deviceId].sort((a, b) => new Date(a.timestamp) - new Date(b.timestamp));
         });
-        
+
+        // Filter devices by selected person if applicable
+        const filteredDevices = {};
+        Object.keys(deviceLocations).forEach(deviceId => {
+            if (!this.currentPerson || this.deviceOwners[deviceId] === this.currentPerson) {
+                filteredDevices[deviceId] = deviceLocations[deviceId];
+            }
+        });
+
         let bounds = L.latLngBounds();
         let hasLocations = false;
-        
+
         // Process each device
-        Object.keys(deviceLocations).forEach(deviceId => {
-            const locations = deviceLocations[deviceId];
+        Object.keys(filteredDevices).forEach(deviceId => {
+            const locations = filteredDevices[deviceId];
             if (locations.length === 0) return;
             
             const color = this.getDeviceColor(deviceId);
@@ -173,14 +197,16 @@ class FindHub {
         if (hasLocations) {
             this.map.fitBounds(bounds, { padding: [50, 50] });
         }
-        
+
         // Update the appropriate list based on current view
         if (this.currentView === 'devices') {
-            this.updateDeviceList(deviceLocations);
+            this.updateDeviceList(filteredDevices);
         } else if (this.currentView === 'device-detail') {
             this.updateDeviceDetailView();
         } else if (this.currentView === 'people') {
-            this.updatePeopleList(deviceLocations);
+            this.updatePeopleList();
+        } else if (this.currentView === 'person-detail') {
+            this.updatePersonDevicesList(filteredDevices);
         }
     }
     
@@ -277,10 +303,12 @@ class FindHub {
     
     showDevicesView() {
         this.currentView = 'devices';
+        this.currentPerson = null;
         
         // Show devices view, hide people view
         const devicesView = document.getElementById('devices-view');
         const peopleView = document.getElementById('people-view');
+        const personDetailView = document.getElementById('person-detail-view');
         const devicesTab = document.getElementById('devices-tab');
         const peopleTab = document.getElementById('people-tab');
         
@@ -292,6 +320,7 @@ class FindHub {
             peopleView.classList.remove('active');
             peopleView.style.display = 'none';
         }
+        if (personDetailView) personDetailView.style.display = 'none';
         
         // Update tab states
         if (devicesTab) devicesTab.classList.add('active');
@@ -303,10 +332,12 @@ class FindHub {
     
     showPeopleView() {
         this.currentView = 'people';
+        this.currentPerson = null;
         
         // Show people view, hide devices view
         const devicesView = document.getElementById('devices-view');
         const peopleView = document.getElementById('people-view');
+        const personDetailView = document.getElementById('person-detail-view');
         const devicesTab = document.getElementById('devices-tab');
         const peopleTab = document.getElementById('people-tab');
         
@@ -318,6 +349,7 @@ class FindHub {
             peopleView.classList.add('active');
             peopleView.style.display = 'block';
         }
+        if (personDetailView) personDetailView.style.display = 'none';
         
         // Update tab states
         if (devicesTab) devicesTab.classList.remove('active');
@@ -328,13 +360,20 @@ class FindHub {
     }
     
     goBack() {
-        // If we're in device detail view, go back to devices view
         if (this.currentView === 'device-detail') {
-            this.showDevicesView();
+            if (this.currentPerson) {
+                this.showPersonDetail(this.currentPerson);
+            } else {
+                this.showDevicesView();
+            }
             return;
         }
-        
-        // Otherwise, just refresh the current view
+
+        if (this.currentView === 'person-detail') {
+            this.showPeopleView();
+            return;
+        }
+
         if (this.currentView === 'devices') {
             this.showDevicesView();
         } else {
@@ -351,44 +390,109 @@ class FindHub {
     updatePeopleList() {
         const peopleList = document.getElementById('people-list');
         if (!peopleList) return;
-        
+
         peopleList.innerHTML = '';
-        
-        // Group devices by "person" (for demo, treat each device as a person)
-        const deviceEntries = Object.entries(this.markers);
-        
-        if (deviceEntries.length === 0) {
+        const people = Object.keys(this.personDevices);
+
+        if (people.length === 0) {
             peopleList.innerHTML = '<div style="color: #95a5a6; font-style: italic;">No people found</div>';
             return;
         }
-        
-        deviceEntries.forEach(([deviceId, marker]) => {
-            const color = this.getDeviceColor(deviceId);
-            const friendlyName = deviceId.includes('_') ? deviceId.split('_')[1] : deviceId;
-            
+
+        people.forEach(person => {
+            const devices = this.personDevices[person] || [];
+            if (devices.length === 0) return;
+
+            // Determine latest timestamp across devices
+            let latestTs = null;
+            devices.forEach(d => {
+                const locs = this.allDeviceLocations[d];
+                if (locs && locs.length) {
+                    const ts = locs[locs.length - 1].timestamp;
+                    if (!latestTs || new Date(ts) > new Date(latestTs)) {
+                        latestTs = ts;
+                    }
+                }
+            });
+
+            const color = this.getDeviceColor(devices[0]);
+
             const personDiv = document.createElement('div');
             personDiv.className = 'person-item';
             personDiv.style.borderLeftColor = color;
-            
-            // Get the latest location data for this device
-            const latLng = marker.getLatLng();
-            
+
             personDiv.innerHTML = `
                 <div class="person-info">
-                    <div class="person-name">${friendlyName}</div>
-                    <div class="person-status">Available</div>
+                    <div class="person-name">${person}</div>
+                    <div class="person-status">${devices.length} device${devices.length > 1 ? 's' : ''}</div>
                 </div>
                 <div class="person-location">
-                    <div class="location-text">Current location</div>
-                    <div class="location-coords">${latLng.lat.toFixed(6)}, ${latLng.lng.toFixed(6)}</div>
+                    <div class="location-text">Last update</div>
+                    <div class="location-coords">${this.formatTime(latestTs)}</div>
                 </div>
             `;
-            
+
             personDiv.onclick = () => {
-                this.focusDevice(deviceId, { lat: latLng.lat, lon: latLng.lng });
+                this.showPersonDetail(person);
             };
-            
+
             peopleList.appendChild(personDiv);
+        });
+    }
+
+    showPersonDetail(person) {
+        this.currentView = 'person-detail';
+        this.currentPerson = person;
+
+        const peopleView = document.getElementById('people-view');
+        const personDetailView = document.getElementById('person-detail-view');
+
+        if (peopleView) peopleView.style.display = 'none';
+        if (personDetailView) personDetailView.style.display = 'block';
+
+        const nameEl = document.getElementById('person-detail-name');
+        if (nameEl) nameEl.textContent = person;
+
+        this.loadLocations();
+    }
+
+    updatePersonDevicesList(deviceLocations) {
+        const listEl = document.getElementById('person-devices-list');
+        if (!listEl) return;
+
+        listEl.innerHTML = '';
+
+        const deviceIds = Object.keys(deviceLocations);
+        if (deviceIds.length === 0) {
+            listEl.innerHTML = '<div style="color: #95a5a6; font-style: italic; padding: 20px;">No devices found</div>';
+            return;
+        }
+
+        deviceIds.forEach(deviceId => {
+            const locations = deviceLocations[deviceId];
+            if (!locations || locations.length === 0) return;
+
+            const latest = locations[locations.length - 1];
+            const color = this.getDeviceColor(deviceId);
+            const friendlyName = latest.friendly_name || deviceId;
+
+            const div = document.createElement('div');
+            div.className = 'device-item';
+            div.innerHTML = `
+                <div class="device-icon" style="background-color: ${color};">
+                    <i class="fas fa-mobile-alt"></i>
+                </div>
+                <div class="device-info">
+                    <div class="device-name">${friendlyName}</div>
+                    <div class="device-status">${this.formatTime(latest.timestamp)}</div>
+                </div>
+            `;
+
+            div.onclick = () => {
+                this.showDeviceDetail(deviceId);
+            };
+
+            listEl.appendChild(div);
         });
     }
     
@@ -399,10 +503,12 @@ class FindHub {
         // Hide all views, show device detail view
         const devicesView = document.getElementById('devices-view');
         const peopleView = document.getElementById('people-view');
+        const personDetailView = document.getElementById('person-detail-view');
         const deviceDetailView = document.getElementById('device-detail-view');
         
         if (devicesView) devicesView.style.display = 'none';
         if (peopleView) peopleView.style.display = 'none';
+        if (personDetailView) personDetailView.style.display = 'none';
         if (deviceDetailView) deviceDetailView.style.display = 'block';
         
         this.updateDeviceDetailView();

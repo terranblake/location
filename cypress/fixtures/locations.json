@@ -1,0 +1,26 @@
+[
+  {
+    "timestamp": "2025-07-06T12:00:00",
+    "device_id": "alice_phone",
+    "lat": 1.0,
+    "lon": 1.0,
+    "accuracy": 5,
+    "friendly_name": "Alice Phone"
+  },
+  {
+    "timestamp": "2025-07-06T12:05:00",
+    "device_id": "alice_watch",
+    "lat": 1.1,
+    "lon": 1.1,
+    "accuracy": 5,
+    "friendly_name": "Alice Watch"
+  },
+  {
+    "timestamp": "2025-07-06T11:50:00",
+    "device_id": "bob_phone",
+    "lat": 2.0,
+    "lon": 2.0,
+    "accuracy": 5,
+    "friendly_name": "Bob Phone"
+  }
+]

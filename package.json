@@ -1,0 +1,17 @@
+{
+  "name": "location",
+  "version": "1.0.0",
+  "description": "A complete GPS tracking solution with Google Find My Device-style interface, Termux logging, server-side processing, and Cloudflare tunnel integration.",
+  "main": "index.js",
+  "scripts": {
+    "test": "cypress run"
+  },
+  "keywords": [],
+  "author": "",
+  "license": "ISC",
+  "type": "commonjs",
+  "devDependencies": {
+    "cypress": "^14.5.1",
+    "typescript": "^5.8.3"
+  }
+}
