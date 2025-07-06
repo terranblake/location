@@ -130,3 +130,10 @@ Use the GPS service script from the first artifact to automatically log and sync
 - Security contexts and capability dropping
 - Read-only tunnel authentication mounting
 - Resource limits and health checks
+
+## Test Video Workflow
+
+When a pull request modifies files under `tests/`, a GitHub Actions workflow runs
+the changed tests with Playwright video recording enabled. The resulting videos
+are uploaded as the `test-videos` artifact and a comment with a direct link to
+the artifact panel is posted on the pull request.

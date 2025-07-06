@@ -3,7 +3,6 @@ import subprocess
 import time
 import urllib.request
 import pytest
-from playwright.sync_api import sync_playwright
 
 
 @pytest.fixture(scope="session")
@@ -25,11 +24,7 @@ def server():
     proc.wait()
 
 
-def test_paths(server):
-    with sync_playwright() as p:
-        browser = p.chromium.launch()
-        page = browser.new_page()
-        page.goto(f"{server}/")
-        page.wait_for_function("() => window.L !== undefined", timeout=10000)
-        assert "Find Hub" in page.title()
-        browser.close()
+def test_paths(server, page):
+    page.goto(f"{server}/")
+    page.wait_for_function("() => window.L !== undefined", timeout=10000)
+    assert "Find Hub" in page.title()
