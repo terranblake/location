@@ -366,7 +366,8 @@ class FindHub {
             if (locs.length === 0) return;
             const owner = this.getOwner(deviceId);
             const latest = locs[locs.length - 1];
-            if (!ownerLatest[owner] || new Date(latest.timestamp) > new Date(ownerLatest[owner].latest.timestamp)) {
+            const latestTimestamp = new Date(latest.timestamp);
+            if (!ownerLatest[owner] || latestTimestamp > new Date(ownerLatest[owner].latest.timestamp)) {
                 ownerLatest[owner] = { latest, deviceId };
             }
         });
