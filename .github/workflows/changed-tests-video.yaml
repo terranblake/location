@@ -23,16 +23,28 @@ jobs:
         run: |
           git fetch origin ${{ github.event.pull_request.base.ref }}
           echo "Comparing base branch: ${{ github.event.pull_request.base.ref }} with current commit: ${{ github.sha }}"
-          # First check if there are any new test files
-          NEW_FILES=$(git ls-files --others --exclude-standard | grep -E 'tests/.*\.py$' || true)
-          # Then check for modified existing test files
+          
+          # Get all current test files
+          CURRENT_FILES=$(git ls-files tests/ | grep '\.py$' | sort)
+          
+          # Get all test files from the base branch
+          BASE_FILES=$(git ls-tree -r --name-only origin/${{ github.event.pull_request.base.ref }} -- tests/ | grep '\.py$' | sort)
+          
+          # Find new test files (in current but not in base)
+          NEW_FILES=$(comm -23 <(echo "$CURRENT_FILES") <(echo "$BASE_FILES") || true)
+          
+          # Find modified test files
           MODIFIED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} -- 'tests/**/*.py' || true)
+          
           # Combine both lists
           CHANGED="$NEW_FILES"$'\n'"$MODIFIED_FILES"
-          # Remove empty lines
-          CHANGED=$(echo "$CHANGED" | grep -v '^$' || true)
+          
+          # Remove empty lines and duplicates
+          CHANGED=$(echo "$CHANGED" | grep -v '^$' | sort | uniq || true)
+          
           echo "Changed test files:"
           echo "$CHANGED"
+          
           echo "files<<EOF" >> "$GITHUB_OUTPUT"
           echo "$CHANGED" >> "$GITHUB_OUTPUT"
           echo "EOF" >> "$GITHUB_OUTPUT"
