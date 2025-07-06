@@ -14,7 +14,8 @@ RUN wget -q https://github.com/cloudflare/cloudflared/releases/latest/download/c
 WORKDIR /app
 
 # Install Python dependencies
-RUN pip install --no-cache-dir flask
+COPY requirements.txt ./
+RUN pip install --no-cache-dir -r requirements.txt
 
 # Create necessary directories
 RUN mkdir -p /logs /tunnel-auth static/html static/css static/js

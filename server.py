@@ -8,7 +8,7 @@ import os
 import json
 import glob
 from datetime import datetime, timedelta
-from flask import Flask, jsonify, send_from_directory, request, request
+from flask import Flask, jsonify, send_from_directory, request
 
 app = Flask(__name__, static_folder='static')
 
@@ -177,6 +177,10 @@ def css_files(filename):
 @app.route('/js/<path:filename>')
 def js_files(filename):
     return send_from_directory('static/js', filename)
+
+@app.route('/vendor/<path:filename>')
+def vendor_files(filename):
+    return send_from_directory('static/vendor', filename)
 
 if __name__ == '__main__':
     # Ensure log directory exists
