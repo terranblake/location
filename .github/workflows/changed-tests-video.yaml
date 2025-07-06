@@ -59,6 +59,29 @@ jobs:
           TEST_FILES=$(echo "${{ steps.changed.outputs.files }}" | tr '\n' ' ')
           echo "Test files to run: $TEST_FILES"
           python -m pytest -v $TEST_FILES --video=on --output=test-videos
+      - name: Process videos for comment
+        if: steps.changed.outputs.files != ''
+        id: process-videos
+        run: |
+          # Find all video files
+          VIDEO_FILES=$(find test-videos -name "*.webm" -o -name "*.mp4" | head -10)
+          echo "Found video files:"
+          echo "$VIDEO_FILES"
+          
+          # Count total videos
+          TOTAL_COUNT=$(find test-videos -name "*.webm" -o -name "*.mp4" | wc -l)
+          echo "Total video count: $TOTAL_COUNT"
+          
+          # Get first 3 videos for embedding
+          FIRST_THREE=$(echo "$VIDEO_FILES" | head -3)
+          echo "First three videos:"
+          echo "$FIRST_THREE"
+          
+          # Set outputs
+          echo "total_count=$TOTAL_COUNT" >> "$GITHUB_OUTPUT"
+          echo "first_three<<EOF" >> "$GITHUB_OUTPUT"
+          echo "$FIRST_THREE" >> "$GITHUB_OUTPUT"
+          echo "EOF" >> "$GITHUB_OUTPUT"
       - name: Upload videos
         if: steps.changed.outputs.files != ''
         uses: actions/upload-artifact@v4
@@ -66,17 +89,74 @@ jobs:
           name: test-videos
           path: test-videos
           if-no-files-found: warn
-      - name: Comment link
-        if: steps.changed.outputs.files != ''
+      - name: Comment with videos
+        if: steps.changed.outputs.files != '' && steps.process-videos.outputs.total_count > 0
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GH_TOKEN }}
           script: |
-            const url = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts`;
+            const fs = require('fs');
+            const path = require('path');
+            
+            // Get video files
+            const videoFiles = `${{ steps.process-videos.outputs.first_three }}`.split('\n').filter(f => f.trim());
+            const totalCount = parseInt('${{ steps.process-videos.outputs.total_count }}');
+            
+            let commentBody = '📹 **Test Videos**\n\n';
+            
+            // Process first 3 videos for embedding
+            for (let i = 0; i < Math.min(videoFiles.length, 3); i++) {
+              const videoFile = videoFiles[i].trim();
+              if (videoFile && fs.existsSync(videoFile)) {
+                try {
+                  const fileName = path.basename(videoFile);
+                  const fileStats = fs.statSync(videoFile);
+                  const fileSizeMB = (fileStats.size / (1024 * 1024)).toFixed(2);
+                  
+                  commentBody += `### ${fileName}\n`;
+                  commentBody += `**Size:** ${fileSizeMB} MB\n\n`;
+                  
+                  // Embed video if it's small enough (< 10MB for base64 embedding)
+                  if (fileStats.size < 10 * 1024 * 1024) {
+                    try {
+                      const videoData = fs.readFileSync(videoFile);
+                      const base64Video = videoData.toString('base64');
+                      const mimeType = fileName.endsWith('.webm') ? 'video/webm' : 'video/mp4';
+                      
+                      commentBody += `<video width="800" controls>\n`;
+                      commentBody += `  <source src="data:${mimeType};base64,${base64Video}" type="${mimeType}">\n`;
+                      commentBody += `  Your browser does not support the video tag.\n`;
+                      commentBody += `</video>\n\n`;
+                    } catch (error) {
+                      console.log(`Error embedding video ${fileName}:`, error);
+                      commentBody += `❌ Error embedding video (available in artifacts)\n\n`;
+                    }
+                  } else {
+                    commentBody += `📁 Video too large for inline display (available in artifacts)\n\n`;
+                  }
+                } catch (error) {
+                  console.log(`Error processing video file ${videoFile}:`, error);
+                  const fileName = path.basename(videoFile);
+                  commentBody += `### ${fileName}\n`;
+                  commentBody += `❌ Error processing video file\n\n`;
+                }
+              }
+            }
+            
+            // Add artifact link for all videos
+            const artifactUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts`;
+            
+            commentBody += `---\n`;
+            commentBody += `📦 **Download All Videos:** All ${totalCount} video(s) can be downloaded from the [workflow artifacts](${artifactUrl}).\n`;
+            
+            if (totalCount > 3) {
+              commentBody += `\n> **Note:** Only the first 3 videos are shown above. ${totalCount - 3} additional video(s) are available in the artifacts.\n`;
+            }
+            
             github.rest.issues.createComment({
               issue_number: context.issue.number,
               owner: context.repo.owner,
               repo: context.repo.repo,
-              body: `📹 Playwright videos available [here](${url}).`
+              body: commentBody
             });
 
