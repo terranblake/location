@@ -5,6 +5,7 @@ class FindHub {
         this.markers = {};
         this.polylines = {};
         this.deviceColors = {};
+        this.ownerColors = {};
         this.showPaths = true;
         this.currentView = 'devices'; // Track current view
         this.currentDevice = null; // Track current device in detail view
@@ -37,12 +38,32 @@ class FindHub {
         this.showDevicesView();
     }
     
-    getDeviceColor(deviceId) {
-        if (!this.deviceColors[deviceId]) {
-            this.deviceColors[deviceId] = this.colorPalette[this.colorIndex % this.colorPalette.length];
+    getOwnerFromDevice(deviceId) {
+        return deviceId.includes('_') ? deviceId.split('_')[0] : deviceId;
+    }
+
+    getOwnerColor(owner) {
+        if (!this.ownerColors[owner]) {
+            this.ownerColors[owner] = this.colorPalette[this.colorIndex % this.colorPalette.length];
             this.colorIndex++;
         }
-        return this.deviceColors[deviceId];
+        return this.ownerColors[owner];
+    }
+
+    getDeviceColor(deviceId) {
+        const owner = this.getOwnerFromDevice(deviceId);
+        return this.getOwnerColor(owner);
+    }
+
+    calcCentroid(locations) {
+        const sum = locations.reduce((acc, loc) => ({
+            lat: acc.lat + loc.lat,
+            lon: acc.lon + loc.lon,
+        }), { lat: 0, lon: 0 });
+        return {
+            lat: sum.lat / locations.length,
+            lon: sum.lon / locations.length,
+        };
     }
     
     formatTime(timestamp) {
@@ -118,56 +139,77 @@ class FindHub {
         
         let bounds = L.latLngBounds();
         let hasLocations = false;
-        
-        // Process each device
-        Object.keys(deviceLocations).forEach(deviceId => {
-            const locations = deviceLocations[deviceId];
-            if (locations.length === 0) return;
-            
-            const color = this.getDeviceColor(deviceId);
-            
-            // Always create polyline for path if multiple points
-            if (locations.length > 1) {
-                const latLngs = locations.map(loc => [loc.lat, loc.lon]);
-                const polyline = L.polyline(latLngs, {
-                    color: color,
-                    weight: 3,
-                    opacity: 0.7,
-                    smoothFactor: 1
-                }).addTo(this.map);
-                this.polylines[deviceId] = polyline;
-            }
-            
-            // Add markers for all locations, with the latest one being most prominent
-            locations.forEach((loc, index) => {
-                const isLatest = index === locations.length - 1;
-                const marker = L.circleMarker([loc.lat, loc.lon], {
+
+        if (this.currentView === 'people') {
+            const ownerLocations = {};
+            Object.keys(deviceLocations).forEach(deviceId => {
+                const owner = this.getOwnerFromDevice(deviceId);
+                ownerLocations[owner] = ownerLocations[owner] || [];
+                ownerLocations[owner].push(...deviceLocations[deviceId]);
+            });
+
+            Object.keys(ownerLocations).forEach(owner => {
+                const centroid = this.calcCentroid(ownerLocations[owner]);
+                const color = this.getOwnerColor(owner);
+                const marker = L.circleMarker([centroid.lat, centroid.lon], {
                     color: '#ffffff',
                     fillColor: color,
-                    fillOpacity: isLatest ? 0.9 : 0.5,
-                    radius: isLatest ? 8 : 4,
+                    fillOpacity: 0.9,
+                    radius: 8,
                     weight: 2
                 }).addTo(this.map);
-                
-                // Only add popup to latest marker
-                if (isLatest) {
-                    const friendlyName = loc.friendly_name || deviceId;
-                    const popupContent = `
-                        <div class="popup-device-name">${friendlyName}</div>
-                        <div class="popup-info">
-                            <strong>Time:</strong> ${this.formatTime(loc.timestamp)}<br>
-                            <strong>Accuracy:</strong> ${this.formatAccuracy(loc.accuracy)}<br>
-                            <strong>Coordinates:</strong> ${loc.lat.toFixed(6)}, ${loc.lon.toFixed(6)}
-                        </div>
-                    `;
-                    marker.bindPopup(popupContent);
-                    this.markers[deviceId] = marker;
-                }
-                
-                bounds.extend([loc.lat, loc.lon]);
+                this.markers[owner] = marker;
+                bounds.extend([centroid.lat, centroid.lon]);
                 hasLocations = true;
             });
-        });
+        } else {
+            // Process each device
+            Object.keys(deviceLocations).forEach(deviceId => {
+                const locations = deviceLocations[deviceId];
+                if (locations.length === 0) return;
+
+                const color = this.getDeviceColor(deviceId);
+
+                if (locations.length > 1) {
+                    const latLngs = locations.map(loc => [loc.lat, loc.lon]);
+                    const polyline = L.polyline(latLngs, {
+                        color: color,
+                        weight: 3,
+                        opacity: 0.7,
+                        smoothFactor: 1
+                    }).addTo(this.map);
+                    this.polylines[deviceId] = polyline;
+                }
+
+                locations.forEach((loc, index) => {
+                    const isLatest = index === locations.length - 1;
+                    const marker = L.circleMarker([loc.lat, loc.lon], {
+                        color: '#ffffff',
+                        fillColor: color,
+                        fillOpacity: isLatest ? 0.9 : 0.5,
+                        radius: isLatest ? 8 : 4,
+                        weight: 2
+                    }).addTo(this.map);
+
+                    if (isLatest) {
+                        const friendlyName = loc.friendly_name || deviceId;
+                        const popupContent = `
+                            <div class="popup-device-name">${friendlyName}</div>
+                            <div class="popup-info">
+                                <strong>Time:</strong> ${this.formatTime(loc.timestamp)}<br>
+                                <strong>Accuracy:</strong> ${this.formatAccuracy(loc.accuracy)}<br>
+                                <strong>Coordinates:</strong> ${loc.lat.toFixed(6)}, ${loc.lon.toFixed(6)}
+                            </div>
+                        `;
+                        marker.bindPopup(popupContent);
+                        this.markers[deviceId] = marker;
+                    }
+
+                    bounds.extend([loc.lat, loc.lon]);
+                    hasLocations = true;
+                });
+            });
+        }
         
         // Fit map to show all locations
         if (hasLocations) {
@@ -354,7 +396,6 @@ class FindHub {
         
         peopleList.innerHTML = '';
         
-        // Group devices by "person" (for demo, treat each device as a person)
         const deviceEntries = Object.entries(this.markers);
         
         if (deviceEntries.length === 0) {
@@ -362,9 +403,9 @@ class FindHub {
             return;
         }
         
-        deviceEntries.forEach(([deviceId, marker]) => {
-            const color = this.getDeviceColor(deviceId);
-            const friendlyName = deviceId.includes('_') ? deviceId.split('_')[1] : deviceId;
+        deviceEntries.forEach(([ownerId, marker]) => {
+            const color = this.getOwnerColor(ownerId);
+            const friendlyName = ownerId;
             
             const personDiv = document.createElement('div');
             personDiv.className = 'person-item';
@@ -385,7 +426,7 @@ class FindHub {
             `;
             
             personDiv.onclick = () => {
-                this.focusDevice(deviceId, { lat: latLng.lat, lon: latLng.lng });
+                this.map.setView([latLng.lat, latLng.lng], 12);
             };
             
             peopleList.appendChild(personDiv);

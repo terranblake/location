@@ -92,6 +92,10 @@ Point `find.terran.sh` to your Cloudflare tunnel in the Cloudflare dashboard.
 - **Persistent Storage**: Logs stored on PVC for durability
 - **Health Checks**: Built-in monitoring and health endpoints
 
+### People view
+
+When no person is selected, one marker per owner is displayed at the centroid of that owner's devices. The map automatically fits these markers.
+
 ## API Endpoints
 
 - `GET /` - Main web interface
