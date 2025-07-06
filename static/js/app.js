@@ -7,6 +7,7 @@ class FindHub {
         this.deviceColors = {};
         this.showPaths = true;
         this.currentView = 'devices'; // Track current view
+        this.previousView = 'devices'; // Track previous view for breadcrumbs
         this.currentDevice = null; // Track current device in detail view
         this.allDeviceLocations = {}; // Store all device location data
         this.colorPalette = [
@@ -67,6 +68,21 @@ class FindHub {
         } else {
             return `${(accuracy / 1000).toFixed(1)}km`;
         }
+    }
+
+    // Calculate distance in meters between two coordinates
+    calculateDistance(lat1, lon1, lat2, lon2) {
+        const R = 6371e3; // metres
+        const phi1 = lat1 * Math.PI / 180;
+        const phi2 = lat2 * Math.PI / 180;
+        const dPhi = (lat2 - lat1) * Math.PI / 180;
+        const dLambda = (lon2 - lon1) * Math.PI / 180;
+
+        const a = Math.sin(dPhi / 2) ** 2 +
+                  Math.cos(phi1) * Math.cos(phi2) *
+                  Math.sin(dLambda / 2) ** 2;
+        const c = 2 * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+        return R * c;
     }
     
     updateStatus(message, type = 'info') {
@@ -330,7 +346,11 @@ class FindHub {
     goBack() {
         // If we're in device detail view, go back to devices view
         if (this.currentView === 'device-detail') {
-            this.showDevicesView();
+            if (this.previousView === 'people') {
+                this.showPeopleView();
+            } else {
+                this.showDevicesView();
+            }
             return;
         }
         
@@ -393,6 +413,7 @@ class FindHub {
     }
     
     showDeviceDetail(deviceId) {
+        this.previousView = this.currentView;
         this.currentView = 'device-detail';
         this.currentDevice = deviceId;
         
@@ -407,12 +428,31 @@ class FindHub {
         
         this.updateDeviceDetailView();
         
-        // Focus on this device on the map
+        // Focus on this device on the map and fade others
         const locations = this.allDeviceLocations[deviceId];
         if (locations && locations.length > 0) {
-            const latest = locations[locations.length - 1];
-            this.focusDevice(deviceId, latest);
+            const latLngs = locations.map(l => [l.lat, l.lon]);
+            const bounds = L.latLngBounds(latLngs);
+            this.map.fitBounds(bounds, { padding: [50, 50] });
         }
+
+        Object.entries(this.polylines).forEach(([id, poly]) => {
+            if (id === deviceId) {
+                poly.setStyle({ opacity: 0.9 });
+                poly.bringToFront();
+            } else {
+                poly.setStyle({ opacity: 0.1 });
+            }
+        });
+
+        Object.entries(this.markers).forEach(([id, marker]) => {
+            if (id === deviceId) {
+                marker.setStyle({ fillOpacity: 0.9, opacity: 1 });
+                marker.openPopup();
+            } else {
+                marker.setStyle({ fillOpacity: 0.2, opacity: 0.2 });
+            }
+        });
     }
     
     updateDeviceDetailView() {
@@ -486,14 +526,30 @@ class FindHub {
         
         // Show latest 20 locations, most recent first
         const recentLocations = locations.slice(-20).reverse();
-        
-        return recentLocations.map(loc => `
+
+        let html = '';
+        for (let i = 0; i < recentLocations.length; i++) {
+            const loc = recentLocations[i];
+            let distance = '-';
+            let speed = '-';
+            if (i < recentLocations.length - 1) {
+                const next = recentLocations[i + 1];
+                const dist = this.calculateDistance(loc.lat, loc.lon, next.lat, next.lon);
+                const timeDiff = Math.abs(new Date(loc.timestamp) - new Date(next.timestamp)) / 1000; // seconds
+                distance = `${(dist / 1000).toFixed(2)} km`;
+                if (timeDiff > 0) {
+                    speed = `${((dist / timeDiff) * 3.6).toFixed(1)} km/h`;
+                }
+            }
+            html += `
             <div class="history-item">
                 <div class="history-time">${this.formatTime(loc.timestamp)}</div>
                 <div class="history-location">${loc.lat.toFixed(6)}, ${loc.lon.toFixed(6)}</div>
-                <div class="history-accuracy">±${this.formatAccuracy(loc.accuracy)}</div>
-            </div>
-        `).join('');
+                <div class="history-distance">${distance}</div>
+                <div class="history-speed">${speed}</div>
+            </div>`;
+        }
+        return html;
     }
     
     // Device action methods (placeholder implementations)

@@ -634,3 +634,10 @@ body {
     font-size: 12px;
     color: #5f6368;
 }
+
+.history-distance,
+.history-speed {
+    font-size: 12px;
+    color: #5f6368;
+    margin-left: 12px;
+}
