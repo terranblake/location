@@ -29,13 +29,15 @@ jobs:
         env:
           PLAYWRIGHT_VIDEO_MODE: on
         run: |
+          mkdir -p test-videos
           pytest -q ${{ steps.changed.outputs.files }}
       - name: Upload videos
         if: steps.changed.outputs.files != ''
-        uses: actions/upload-artifact@v3
+        uses: actions/upload-artifact@v4
         with:
           name: test-videos
           path: test-videos
+          if-no-files-found: warn
       - name: Comment link
         if: steps.changed.outputs.files != ''
         uses: actions/github-script@v7
