@@ -1,0 +1,96 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Find Hub</title>
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    <link rel="stylesheet" href="/css/style.css">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.0.0/css/all.min.css">
+</head>
+<body>
+    <div class="app-container">
+        <div class="sidebar">
+            <div class="sidebar-header">
+                <h2><i class="fas fa-search-location"></i> Find Hub</h2>
+                <button class="refresh-btn" onclick="refreshLocations()">
+                    <i class="fas fa-sync-alt"></i>
+                </button>
+            </div>
+
+            <div class="nav-tabs">
+                <button id="devices-tab" class="nav-tab active" onclick="showDevicesView()">
+                    <i class="fas fa-mobile-alt"></i>
+                    <span>Devices</span>
+                </button>
+                <button id="people-tab" class="nav-tab" onclick="showPeopleView()">
+                    <i class="fas fa-users"></i>
+                    <span>People</span>
+                </button>
+            </div>
+
+            <div class="view-content">
+                <!-- Devices View -->
+                <div id="devices-view" class="view active">
+                    <div class="section-header">
+                        <h3>Your Devices</h3>
+                    </div>
+                    
+                    <div id="devices-list" class="content-list"></div>
+                </div>
+
+                <!-- Device Detail View -->
+                <div id="device-detail-view" class="view" style="display: none;">
+                    <div class="section-header">
+                        <div class="breadcrumb">
+                            <button id="device-back-btn" class="back-btn" onclick="goBack()">
+                                <i class="fas fa-arrow-left"></i>
+                                <span>Back</span>
+                            </button>
+                        </div>
+                        <h3 id="device-detail-name">Device Name</h3>
+                    </div>
+                    
+                    <div id="device-detail-content" class="device-detail-content">
+                        <!-- Device details will be populated here -->
+                    </div>
+                </div>
+
+                <!-- People View -->
+                <div id="people-view" class="view">
+                    <div class="section-header">
+                        <h3>People</h3>
+                        <div class="breadcrumb">
+                            <button id="back-btn" class="back-btn" onclick="goBack()" style="display: none;">
+                                <i class="fas fa-arrow-left"></i>
+                                <span>Back</span>
+                            </button>
+                        </div>
+                    </div>
+                    
+                    <div id="people-list" class="content-list"></div>
+                </div>
+            </div>
+
+            <div class="status-bar">
+                <div class="status" id="status">Loading...</div>
+            </div>
+        </div>
+
+        <div class="map-container">
+            <div id="map"></div>
+            <div class="map-controls">
+                <button class="map-control-btn" onclick="fitAllDevices()" title="Fit all devices">
+                    <i class="fas fa-expand"></i>
+                </button>
+                <button class="map-control-btn" onclick="togglePaths()" title="Toggle paths">
+                    <i class="fas fa-route"></i>
+                </button>
+            </div>
+        </div>
+    </div>
+
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script src="/js/app.js"></script>
+</body>
+</html>

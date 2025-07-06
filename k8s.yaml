@@ -1,0 +1,182 @@
+# GPS Logs Persistent Volume Claim
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: gps-logs-pvc
+  namespace: location
+  labels:
+    app: gps-tracker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 5Gi
+  # storageClassName: your-storage-class  # Uncomment and specify if needed
+
+# Cloudflare Tunnel Authentication PVC
+---
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: tunnel-auth-pvc
+  namespace: location
+  labels:
+    app: gps-tracker
+spec:
+  accessModes:
+    - ReadWriteOnce
+  resources:
+    requests:
+      storage: 100Mi
+  # storageClassName: your-storage-class  # Uncomment and specify if needed
+
+# ConfigMap for Cloudflare tunnel configuration template
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: tunnel-config
+  namespace: location
+  labels:
+    app: gps-tracker
+data:
+  config.yml: |
+    tunnel: ${TUNNEL_ID}
+    credentials-file: /tunnel-auth/credentials.json
+    
+    ingress:
+      - hostname: find.terran.sh
+        service: http://localhost:8080
+      - service: http_status:404
+
+# GPS Tracker Deployment
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: gps-tracker
+  namespace: location
+  labels:
+    app: gps-tracker
+spec:
+  replicas: 1
+  strategy:
+    type: Recreate  # Since we're using RWO for tunnel auth
+  selector:
+    matchLabels:
+      app: gps-tracker
+  template:
+    metadata:
+      labels:
+        app: gps-tracker
+    spec:
+      containers:
+      - name: gps-tracker
+        image: gps-tracker:latest
+        imagePullPolicy: Never
+        ports:
+        - containerPort: 8080
+          name: http
+        env:
+        - name: PORT
+          value: "8080"
+        - name: LOG_DIR
+          value: "/logs"
+        - name: MAX_AGE_HOURS
+          value: "24"
+        - name: TUNNEL_ID
+          valueFrom:
+            secretKeyRef:
+              name: cloudflare-tunnel
+              key: tunnel-id
+              optional: true
+        volumeMounts:
+        - name: gps-logs
+          mountPath: /logs
+        - name: tunnel-auth
+          mountPath: /tunnel-auth
+          readOnly: true
+        - name: tunnel-config
+          mountPath: /tunnel-config
+          readOnly: true
+        resources:
+          requests:
+            memory: "128Mi"
+            cpu: "100m"
+          limits:
+            memory: "256Mi"
+            cpu: "200m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 30
+          periodSeconds: 30
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 8080
+          initialDelaySeconds: 5
+          periodSeconds: 10
+        securityContext:
+          runAsNonRoot: true
+          runAsUser: 1000
+          allowPrivilegeEscalation: false
+          capabilities:
+            drop:
+            - ALL
+      volumes:
+      - name: gps-logs
+        persistentVolumeClaim:
+          claimName: gps-logs-pvc
+      - name: tunnel-auth
+        persistentVolumeClaim:
+          claimName: tunnel-auth-pvc
+      - name: tunnel-config
+        configMap:
+          name: tunnel-config
+      securityContext:
+        fsGroup: 1000
+
+# Service (for internal access)
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: gps-tracker-service
+  namespace: location
+  labels:
+    app: gps-tracker
+spec:
+  selector:
+    app: gps-tracker
+  ports:
+    - name: http
+      protocol: TCP
+      port: 80
+      targetPort: 8080
+  type: ClusterIP
+
+# Secret template for Cloudflare tunnel credentials
+---
+apiVersion: v1
+kind: Secret
+metadata:
+  name: cloudflare-tunnel
+  namespace: location
+  labels:
+    app: gps-tracker
+type: Opaque
+data:
+  # Base64 encoded tunnel ID
+  # Example: echo -n "your-tunnel-id" | base64
+  tunnel-id: "Mjg1MjYxMTktMTk4Zi00ZGEwLWJhOGEtOTYyZTQ3M2I4YzAz"  # 28526119-198f-4da0-ba8a-962e473b8c03
+  # You can also put the credentials.json content here if preferred
+  # credentials.json: |
+  #   {
+  #     "AccountTag": "your-account-tag",
+  #     "TunnelSecret": "your-tunnel-secret",
+  #     "TunnelID": "your-tunnel-id"
+  #   }
