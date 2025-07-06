@@ -178,6 +178,10 @@ def css_files(filename):
 def js_files(filename):
     return send_from_directory('static/js', filename)
 
+@app.route('/vendor/<path:filename>')
+def vendor_files(filename):
+    return send_from_directory('static/vendor', filename)
+
 if __name__ == '__main__':
     # Ensure log directory exists
     os.makedirs(LOG_DIR, exist_ok=True)
