@@ -1,0 +1,18 @@
+[
+  {
+    "timestamp": "2024-05-06T10:00:00",
+    "device_id": "alice_phone",
+    "lat": 37.7749,
+    "lon": -122.4194,
+    "accuracy": 5,
+    "friendly_name": "phone"
+  },
+  {
+    "timestamp": "2024-05-06T10:05:00",
+    "device_id": "bob_watch",
+    "lat": 34.0522,
+    "lon": -118.2437,
+    "accuracy": 8,
+    "friendly_name": "watch"
+  }
+]

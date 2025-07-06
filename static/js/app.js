@@ -119,15 +119,59 @@ class FindHub {
         let bounds = L.latLngBounds();
         let hasLocations = false;
         
+        // If viewing people overview, aggregate by person and skip polylines
+        if (this.currentView === 'people') {
+            const peopleData = {};
+            Object.keys(deviceLocations).forEach(deviceId => {
+                const locations = deviceLocations[deviceId];
+                if (locations.length === 0) return;
+
+                const latest = locations[locations.length - 1];
+                const owner = deviceId.includes('_') ? deviceId.split('_')[0] : deviceId;
+                if (!peopleData[owner]) {
+                    peopleData[owner] = { latSum: 0, lonSum: 0, count: 0, latest: latest, devices: [] };
+                }
+                peopleData[owner].latSum += latest.lat;
+                peopleData[owner].lonSum += latest.lon;
+                peopleData[owner].count += 1;
+                peopleData[owner].devices.push(deviceId);
+                if (new Date(latest.timestamp) > new Date(peopleData[owner].latest.timestamp)) {
+                    peopleData[owner].latest = latest;
+                }
+            });
+
+            Object.keys(peopleData).forEach(person => {
+                const data = peopleData[person];
+                const lat = data.latSum / data.count;
+                const lon = data.lonSum / data.count;
+                const marker = L.marker([lat, lon]).addTo(this.map);
+                const popupContent = `
+                    <div class="popup-device-name">${person}</div>
+                    <div class="popup-info">Updated ${this.formatTime(data.latest.timestamp)}</div>
+                `;
+                marker.bindPopup(popupContent);
+                this.markers[person] = marker;
+                bounds.extend([lat, lon]);
+                hasLocations = true;
+            });
+
+            if (hasLocations) {
+                this.map.fitBounds(bounds, { padding: [50, 50] });
+            }
+
+            this.updatePeopleList(peopleData);
+            return;
+        }
+
         // Process each device
         Object.keys(deviceLocations).forEach(deviceId => {
             const locations = deviceLocations[deviceId];
             if (locations.length === 0) return;
-            
+
             const color = this.getDeviceColor(deviceId);
-            
+
             // Always create polyline for path if multiple points
-            if (locations.length > 1) {
+            if (locations.length > 1 && this.showPaths) {
                 const latLngs = locations.map(loc => [loc.lat, loc.lon]);
                 const polyline = L.polyline(latLngs, {
                     color: color,
@@ -137,7 +181,7 @@ class FindHub {
                 }).addTo(this.map);
                 this.polylines[deviceId] = polyline;
             }
-            
+
             // Add markers for all locations, with the latest one being most prominent
             locations.forEach((loc, index) => {
                 const isLatest = index === locations.length - 1;
@@ -148,7 +192,7 @@ class FindHub {
                     radius: isLatest ? 8 : 4,
                     weight: 2
                 }).addTo(this.map);
-                
+
                 // Only add popup to latest marker
                 if (isLatest) {
                     const friendlyName = loc.friendly_name || deviceId;
@@ -163,7 +207,7 @@ class FindHub {
                     marker.bindPopup(popupContent);
                     this.markers[deviceId] = marker;
                 }
-                
+
                 bounds.extend([loc.lat, loc.lon]);
                 hasLocations = true;
             });
@@ -179,8 +223,6 @@ class FindHub {
             this.updateDeviceList(deviceLocations);
         } else if (this.currentView === 'device-detail') {
             this.updateDeviceDetailView();
-        } else if (this.currentView === 'people') {
-            this.updatePeopleList(deviceLocations);
         }
     }
     
@@ -348,46 +390,43 @@ class FindHub {
         this.loadLocations();
     }
     
-    updatePeopleList() {
+    updatePeopleList(peopleData) {
         const peopleList = document.getElementById('people-list');
         if (!peopleList) return;
-        
+
         peopleList.innerHTML = '';
-        
-        // Group devices by "person" (for demo, treat each device as a person)
-        const deviceEntries = Object.entries(this.markers);
-        
-        if (deviceEntries.length === 0) {
+
+        const entries = Object.entries(peopleData || {});
+        if (entries.length === 0) {
             peopleList.innerHTML = '<div style="color: #95a5a6; font-style: italic;">No people found</div>';
             return;
         }
-        
-        deviceEntries.forEach(([deviceId, marker]) => {
-            const color = this.getDeviceColor(deviceId);
-            const friendlyName = deviceId.includes('_') ? deviceId.split('_')[1] : deviceId;
-            
+
+        entries.forEach(([person, data]) => {
+            const color = this.getDeviceColor(person);
+            const avgLat = data.latSum / data.count;
+            const avgLon = data.lonSum / data.count;
+            const latestTime = data.latest.timestamp;
+
             const personDiv = document.createElement('div');
             personDiv.className = 'person-item';
             personDiv.style.borderLeftColor = color;
-            
-            // Get the latest location data for this device
-            const latLng = marker.getLatLng();
-            
+
             personDiv.innerHTML = `
                 <div class="person-info">
-                    <div class="person-name">${friendlyName}</div>
-                    <div class="person-status">Available</div>
+                    <div class="person-name">${person}</div>
+                    <div class="person-status">${this.formatTime(latestTime)}</div>
                 </div>
                 <div class="person-location">
-                    <div class="location-text">Current location</div>
-                    <div class="location-coords">${latLng.lat.toFixed(6)}, ${latLng.lng.toFixed(6)}</div>
+                    <div class="location-text">Avg location</div>
+                    <div class="location-coords">${avgLat.toFixed(6)}, ${avgLon.toFixed(6)}</div>
                 </div>
             `;
-            
+
             personDiv.onclick = () => {
-                this.focusDevice(deviceId, { lat: latLng.lat, lon: latLng.lng });
+                this.focusDevice(person, { lat: avgLat, lon: avgLon });
             };
-            
+
             peopleList.appendChild(personDiv);
         });
     }
