@@ -30,7 +30,7 @@ jobs:
           PLAYWRIGHT_VIDEO_MODE: on
         run: |
           mkdir -p test-videos
-          pytest -q ${{ steps.changed.outputs.files }}
+          python -m pytest -q ${{ steps.changed.outputs.files }} --video=on --output=test-videos
       - name: Upload videos
         if: steps.changed.outputs.files != ''
         uses: actions/upload-artifact@v4
