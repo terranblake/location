@@ -2,3 +2,5 @@ Flask==2.3.3
 Werkzeug==2.3.7
 playwright==1.42.0
 pytest==8.2.2
+
+ruff==0.1.14

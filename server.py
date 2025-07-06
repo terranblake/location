@@ -5,7 +5,6 @@ Simple Flask server for tracking GPS locations from log files
 """
 
 import os
-import json
 import glob
 from datetime import datetime, timedelta
 from flask import Flask, jsonify, send_from_directory, request

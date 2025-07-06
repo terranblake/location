@@ -44,6 +44,13 @@ class FindHub {
         }
         return this.deviceColors[deviceId];
     }
+
+    getOwner(deviceId) {
+        if (deviceId.includes('_')) {
+            return deviceId.split('_')[0];
+        }
+        return deviceId;
+    }
     
     formatTime(timestamp) {
         const date = new Date(timestamp);
@@ -347,47 +354,44 @@ class FindHub {
         // In a real implementation, this would load shared/family devices
         this.loadLocations();
     }
-    
+
     updatePeopleList() {
         const peopleList = document.getElementById('people-list');
         if (!peopleList) return;
-        
+
         peopleList.innerHTML = '';
-        
-        // Group devices by "person" (for demo, treat each device as a person)
-        const deviceEntries = Object.entries(this.markers);
-        
-        if (deviceEntries.length === 0) {
+
+        const ownerLatest = {};
+        Object.entries(this.allDeviceLocations).forEach(([deviceId, locs]) => {
+            if (locs.length === 0) return;
+            const owner = this.getOwner(deviceId);
+            const latest = locs[locs.length - 1];
+            if (!ownerLatest[owner] || new Date(latest.timestamp) > new Date(ownerLatest[owner].latest.timestamp)) {
+                ownerLatest[owner] = { latest, deviceId };
+            }
+        });
+
+        const entries = Object.entries(ownerLatest);
+        if (entries.length === 0) {
             peopleList.innerHTML = '<div style="color: #95a5a6; font-style: italic;">No people found</div>';
             return;
         }
-        
-        deviceEntries.forEach(([deviceId, marker]) => {
+
+        entries.forEach(([owner, info]) => {
+            const { latest, deviceId } = info;
             const color = this.getDeviceColor(deviceId);
-            const friendlyName = deviceId.includes('_') ? deviceId.split('_')[1] : deviceId;
-            
             const personDiv = document.createElement('div');
             personDiv.className = 'person-item';
             personDiv.style.borderLeftColor = color;
-            
-            // Get the latest location data for this device
-            const latLng = marker.getLatLng();
-            
             personDiv.innerHTML = `
                 <div class="person-info">
-                    <div class="person-name">${friendlyName}</div>
-                    <div class="person-status">Available</div>
-                </div>
-                <div class="person-location">
-                    <div class="location-text">Current location</div>
-                    <div class="location-coords">${latLng.lat.toFixed(6)}, ${latLng.lng.toFixed(6)}</div>
+                    <div class="person-name">${owner}</div>
+                    <div class="person-status">${this.formatTime(latest.timestamp)}</div>
                 </div>
             `;
-            
             personDiv.onclick = () => {
-                this.focusDevice(deviceId, { lat: latLng.lat, lon: latLng.lng });
+                this.focusDevice(deviceId, latest);
             };
-            
             peopleList.appendChild(personDiv);
         });
     }
