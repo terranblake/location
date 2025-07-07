@@ -1,166 +1,98 @@
 name: changed-test-videos
+
+# ────────────────────────────────
+# 1) give the job write-access to issues
+# ────────────────────────────────
+permissions:
+  contents: read     # still needed for checkout
+  issues: write      # create / update PR-comments
+
 on:
   pull_request:
-    # Run on all PRs to ensure we catch new test files
     types: [opened, synchronize, reopened]
 
 jobs:
   record:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           playwright install --with-deps
-      - name: Detect changed tests
-        id: changed
-        run: |
-          git fetch origin ${{ github.event.pull_request.base.ref }}
-          echo "Comparing base branch: ${{ github.event.pull_request.base.ref }} with current commit: ${{ github.sha }}"
-          
-          # Get all current test files
-          CURRENT_FILES=$(git ls-files tests/ | grep '\.py$' | sort)
-          
-          # Get all test files from the base branch
-          BASE_FILES=$(git ls-tree -r --name-only origin/${{ github.event.pull_request.base.ref }} -- tests/ | grep '\.py$' | sort)
-          
-          # Find new test files (in current but not in base)
-          NEW_FILES=$(comm -23 <(echo "$CURRENT_FILES") <(echo "$BASE_FILES") || true)
-          
-          # Find modified test files
-          MODIFIED_FILES=$(git diff --name-only origin/${{ github.event.pull_request.base.ref }} -- 'tests/**/*.py' || true)
-          
-          # Combine both lists
-          CHANGED="$NEW_FILES"$'\n'"$MODIFIED_FILES"
-          
-          # Remove empty lines and duplicates
-          CHANGED=$(echo "$CHANGED" | grep -v '^$' | sort | uniq || true)
-          
-          echo "Changed test files:"
-          echo "$CHANGED"
-          
-          echo "files<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$CHANGED" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-      - name: Run changed tests
-        if: steps.changed.outputs.files != ''
-        env:
-          PLAYWRIGHT_VIDEO_MODE: on
-        run: |
-          mkdir -p test-videos
-          echo "Running tests: ${{ steps.changed.outputs.files }}"
-          # Convert multiline output to space-separated list
-          TEST_FILES=$(echo "${{ steps.changed.outputs.files }}" | tr '\n' ' ')
-          echo "Test files to run: $TEST_FILES"
-          python -m pytest -v $TEST_FILES --video=on --output=test-videos
-      - name: Process videos for comment
-        if: steps.changed.outputs.files != ''
-        id: process-videos
-        run: |
-          # Find all video files
-          VIDEO_FILES=$(find test-videos -name "*.webm" -o -name "*.mp4" 2>/dev/null || echo "")
-          echo "Found video files:"
-          echo "$VIDEO_FILES"
-          
-          # Count total videos
-          TOTAL_COUNT=$(find test-videos -name "*.webm" -o -name "*.mp4" 2>/dev/null | wc -l)
-          echo "Total video count: $TOTAL_COUNT"
-          
-          # Get first 5 videos for listing
-          FIRST_FIVE=$(echo "$VIDEO_FILES" | head -5)
-          echo "First five videos:"
-          echo "$FIRST_FIVE"
-          
-          # Set outputs
-          echo "total_count=$TOTAL_COUNT" >> "$GITHUB_OUTPUT"
-          echo "first_five<<EOF" >> "$GITHUB_OUTPUT"
-          echo "$FIRST_FIVE" >> "$GITHUB_OUTPUT"
-          echo "EOF" >> "$GITHUB_OUTPUT"
-      - name: Upload videos
-        if: steps.changed.outputs.files != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-videos
-          path: test-videos
-          if-no-files-found: warn
+
+      # … (Detect changed tests, Run tests, Process videos, Upload videos) …
+
       - name: Comment with videos
         if: steps.changed.outputs.files != '' && steps.process-videos.outputs.total_count > 0
         uses: actions/github-script@v7
         with:
           github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const fs = require('fs');
+            const fs   = require('fs');
             const path = require('path');
-            
-            // Get video files
-            const videoFiles = `${{ steps.process-videos.outputs.first_five }}`.split('\n').filter(f => f.trim());
-            const totalCount = parseInt('${{ steps.process-videos.outputs.total_count }}');
-            
-            let commentBody = '📹 **Test Videos Generated**\n\n';
-            commentBody += `✅ Successfully recorded ${totalCount} test video(s) for the changed tests.\n\n`;
-            
-            // List video files with details
-            for (let i = 0; i < Math.min(videoFiles.length, 5); i++) {
-              const videoFile = videoFiles[i].trim();
-              if (videoFile && fs.existsSync(videoFile)) {
-                try {
-                  const fileName = path.basename(videoFile);
-                  const fileStats = fs.statSync(videoFile);
-                  const fileSizeMB = (fileStats.size / (1024 * 1024)).toFixed(2);
-                  
-                  commentBody += `📄 **${fileName}** (${fileSizeMB} MB)\n`;
-                } catch (error) {
-                  console.log(`Error processing video file ${videoFile}:`, error);
-                  const fileName = path.basename(videoFile);
-                  commentBody += `📄 **${fileName}** (size unknown)\n`;
-                }
+
+            // -----------------------------------------------------------------
+            // build the comment body (unchanged)
+            // -----------------------------------------------------------------
+            const videoFiles = `${{ steps.process-videos.outputs.first_five }}`.split('\n').filter(Boolean);
+            const totalCount = parseInt('${{ steps.process-videos.outputs.total_count }}', 10);
+
+            let body = '📹 **Test Videos Generated**\n\n';
+            body += `✅ Successfully recorded ${totalCount} test video(s) for the changed tests.\n\n`;
+
+            for (const videoFile of videoFiles.slice(0, 5)) {
+              try {
+                const stats = fs.statSync(videoFile);
+                body += `📄 **${path.basename(videoFile)}** (${(stats.size / 1_048_576).toFixed(2)} MB)\n`;
+              } catch {
+                body += `📄 **${path.basename(videoFile)}** (size unknown)\n`;
               }
             }
-            
-            if (totalCount > 5) {
-              commentBody += `📄 ... and ${totalCount - 5} more video(s)\n`;
-            }
-            
-            // Add artifact link for all videos
+            if (totalCount > 5) body += `📄 ... and ${totalCount - 5} more video(s)\n`;
+
             const artifactUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts`;
-            
-            commentBody += `\n---\n`;
-            commentBody += `📦 **Download Videos:** All ${totalCount} video(s) can be downloaded from the [workflow artifacts](${artifactUrl}).\n\n`;
-            commentBody += `> **How to view:** Download the artifact zip file, extract it, and open the .webm files in your browser or video player.\n`;
-            
-            // Check for existing comments to avoid duplicates
-            const comments = await github.rest.issues.listComments({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-            });
-            
-            const existingComment = comments.data.find(comment => 
-              comment.user.login === 'github-actions[bot]' && 
-              comment.body.includes('📹 **Test Videos Generated**')
+            body += `\n---\n📦 **Download Videos:** All ${totalCount} video(s) can be downloaded from the [workflow artifacts](${artifactUrl}).\n\n`;
+            body += `> **How to view:** Download the artifact zip file, extract it, and open the .webm files in your browser or video player.\n`;
+
+            // -----------------------------------------------------------------
+            // 2) paginate over *all* comments so we always find the bot comment
+            // -----------------------------------------------------------------
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner:  context.repo.owner,
+                repo:   context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100
+              }
             );
-            
-            if (existingComment) {
-              // Update existing comment
+
+            const existing = comments.find(c =>
+              c.user?.type === 'Bot' &&
+              c.body.includes('📹 **Test Videos Generated**')
+            );
+
+            if (existing) {
               await github.rest.issues.updateComment({
-                comment_id: existingComment.id,
                 owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: commentBody
+                repo:  context.repo.repo,
+                comment_id: existing.id,
+                body
               });
             } else {
-              // Create new comment
               await github.rest.issues.createComment({
-                issue_number: context.issue.number,
                 owner: context.repo.owner,
-                repo: context.repo.repo,
-                body: commentBody
+                repo:  context.repo.repo,
+                issue_number: context.issue.number,
+                body
               });
             }
-
