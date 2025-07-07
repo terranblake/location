@@ -90,7 +90,12 @@ Point `find.terran.sh` to your Cloudflare tunnel in the Cloudflare dashboard.
 - **Interactive Map**: Click devices to focus, paths show movement history
 - **Cloudflare Zero Trust**: Secure access with user identification
 - **Persistent Storage**: Logs stored on PVC for durability
-- **Health Checks**: Built-in monitoring and health endpoints
+ - **Health Checks**: Built-in monitoring and health endpoints
+
+## Sidebar behaviour
+
+- Devices tab shows each device separately.
+- People tab aggregates devices by owner and displays the most recent update time for that owner. Clicking a row focuses the owner's last updated device on the map.
 
 ## API Endpoints
 

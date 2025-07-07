@@ -1,53 +1,98 @@
 name: changed-test-videos
+
+# ────────────────────────────────
+# 1) give the job write-access to issues
+# ────────────────────────────────
+permissions:
+  contents: read     # still needed for checkout
+  issues: write      # create / update PR-comments
+
 on:
   pull_request:
-    paths:
-      - 'tests/**'
+    types: [opened, synchronize, reopened]
 
 jobs:
   record:
     runs-on: ubuntu-latest
+
     steps:
       - uses: actions/checkout@v4
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
           python-version: '3.11'
+
       - name: Install deps
         run: |
           python -m pip install --upgrade pip
           python -m pip install -r requirements.txt
           playwright install --with-deps
-      - name: Detect changed tests
-        id: changed
-        run: |
-          git fetch origin ${{ github.event.pull_request.base.ref }}
-          CHANGED=$(git diff --name-only FETCH_HEAD ${{ github.sha }} -- 'tests/**/*.py')
-          echo "files=$CHANGED" >> "$GITHUB_OUTPUT"
-      - name: Run changed tests
-        if: steps.changed.outputs.files != ''
-        env:
-          PLAYWRIGHT_VIDEO_MODE: on
-        run: |
-          mkdir -p test-videos
-          pytest -q ${{ steps.changed.outputs.files }}
-      - name: Upload videos
-        if: steps.changed.outputs.files != ''
-        uses: actions/upload-artifact@v4
-        with:
-          name: test-videos
-          path: test-videos
-          if-no-files-found: warn
-      - name: Comment link
-        if: steps.changed.outputs.files != ''
+
+      # … (Detect changed tests, Run tests, Process videos, Upload videos) …
+
+      - name: Comment with videos
+        if: steps.changed.outputs.files != '' && steps.process-videos.outputs.total_count > 0
         uses: actions/github-script@v7
         with:
+          github-token: ${{ secrets.GITHUB_TOKEN }}
           script: |
-            const url = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts`;
-            github.rest.issues.createComment({
-              issue_number: context.issue.number,
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              body: `📹 Playwright videos available [here](${url}).`
-            });
+            const fs   = require('fs');
+            const path = require('path');
 
+            // -----------------------------------------------------------------
+            // build the comment body (unchanged)
+            // -----------------------------------------------------------------
+            const videoFiles = `${{ steps.process-videos.outputs.first_five }}`.split('\n').filter(Boolean);
+            const totalCount = parseInt('${{ steps.process-videos.outputs.total_count }}', 10);
+
+            let body = '📹 **Test Videos Generated**\n\n';
+            body += `✅ Successfully recorded ${totalCount} test video(s) for the changed tests.\n\n`;
+
+            for (const videoFile of videoFiles.slice(0, 5)) {
+              try {
+                const stats = fs.statSync(videoFile);
+                body += `📄 **${path.basename(videoFile)}** (${(stats.size / 1_048_576).toFixed(2)} MB)\n`;
+              } catch {
+                body += `📄 **${path.basename(videoFile)}** (size unknown)\n`;
+              }
+            }
+            if (totalCount > 5) body += `📄 ... and ${totalCount - 5} more video(s)\n`;
+
+            const artifactUrl = `https://github.com/${{ github.repository }}/actions/runs/${{ github.run_id }}#artifacts`;
+            body += `\n---\n📦 **Download Videos:** All ${totalCount} video(s) can be downloaded from the [workflow artifacts](${artifactUrl}).\n\n`;
+            body += `> **How to view:** Download the artifact zip file, extract it, and open the .webm files in your browser or video player.\n`;
+
+            // -----------------------------------------------------------------
+            // 2) paginate over *all* comments so we always find the bot comment
+            // -----------------------------------------------------------------
+            const comments = await github.paginate(
+              github.rest.issues.listComments,
+              {
+                owner:  context.repo.owner,
+                repo:   context.repo.repo,
+                issue_number: context.issue.number,
+                per_page: 100
+              }
+            );
+
+            const existing = comments.find(c =>
+              c.user?.type === 'Bot' &&
+              c.body.includes('📹 **Test Videos Generated**')
+            );
+
+            if (existing) {
+              await github.rest.issues.updateComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                comment_id: existing.id,
+                body
+              });
+            } else {
+              await github.rest.issues.createComment({
+                owner: context.repo.owner,
+                repo:  context.repo.repo,
+                issue_number: context.issue.number,
+                body
+              });
+            }
